@@ -15,21 +15,18 @@ let tasks =[];
 //=================================================================================
 
 function fetchTasks() {                     // ===== фетч со считыванием задач ===== ===== ===== ===== ===== ===== 
-        fetch('https://demo2.z-bit.ee/tasks', {
-          method: 'GET',
-          headers: {
+    fetch('https://demo2.z-bit.ee/tasks?_=' + new Date().getTime(), {
+        method: 'GET',
+        headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + localStorage.getItem('access_token')
-          }
-        })
+        }
+    })
         .then(response => response.json())
         .then(data => {
-          console.log('fetchTasks- Tasks:', data);
-          // let tasksRec = JSON.parse(data);    // Парсим строку JSON в объект JS
-          // console.log(tasksRec);
-          // RecordTasks(tasksRec);
-          RecordTasks(data);
-        })
+            console.log('fetchTasks- Tasks:', data);
+            RecordTasks(data);  // Передаем объект data напрямую
+          })
         .catch((error) => {
           console.error('error:', error);
         }); 
@@ -39,25 +36,12 @@ function fetchTasks() {                     // ===== фетч со считыв�
 
 
 function RecordTasks(tasksRec) {
-    let allIds = tasksRec.map(task => task.id);
-    console.log('RecordT',allIds); // [1, 2, 3]
+    tasks = tasksRec;  // Обновляем глобальный массив задач
+    console.log("Tasks:", tasks);
 
-    let doneTasks = tasksRec.filter(task => task.marked_as_done);
-    console.log('RecordT',doneTasks);
-
-    let taskCount = tasksRec.length;
-    console.log('RecordT',taskCount);
-
-    let task2 = tasksRec.find(task => task.id === 2);
-    console.log('RecordT',task2);
-    // if (task2) {
-    // task2.desc = 'New description';
-    // console.log(task2);
-    // }
-    tasks = tasksRec;
-    console.log("Dolzno Byt' tasks:", tasksRec);
-
-}     
+    // Отрисовываем задачи на странице
+    tasks.forEach(renderTask);
+}
 
 
 // заменить ведь id вроде даст API // также нах все TaskId++
@@ -79,43 +63,39 @@ function RecordTasks2(tasks) {
 }
 
 function sendTask(title, desc) {
-  const data = {
-    title: title,
-    desc: desc
-  };
+    const data = {
+        title: title,
+        desc: desc
+    };
 
-  fetch('https://demo2.z-bit.ee/tasks', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json','Authorization': 'Bearer ' + localStorage.getItem('access_token')},
-    body: JSON.stringify(data)
-  })
-  .then(response => response.json())
-  .then(data => {
-    console.log('sendTask- Task added:', data);
-    // let tasksRec = JSON.parse(data);    // Парсим строку JSON в объект JS
-    // console.log(tasksRec);
-    // RecordTasks(tasksRec);
-    RecordTasks2([data]);
-  })
-  .catch((error) => {
-    console.error('Error adding task:', error);
-  }); 
+    fetch('https://demo2.z-bit.ee/tasks', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(newTask => {
+        tasks.push(newTask);  // Добавляем задачу в массив
+        renderTask(newTask);   // Отображаем новую задачу
+    })
+    .catch((error) => {
+        console.error('Error adding task:', error);
+    });
 }
 
 // kui leht on brauseris laetud siis lisame esimesed taskid lehele
 window.addEventListener('load', () => {
     taskList = document.querySelector('#task-list');
     addTask = document.querySelector('#add-task');
-    fetchTasks()
+    
+    fetchTasks();  // Загружаем задачи при старте страницы
 
-    tasks.forEach(renderTask);
-
-    // kui nuppu vajutatakse siis lisatakse uus task
+    // Обработчик для добавления новой задачи
     addTask.addEventListener('click', () => {
-        sendTask("Task "+ taskCount, "");
-        const task = createTask(); // Teeme kõigepealt lokaalsesse "andmebaasi" uue taski
-        const taskRow = createTaskRow(task); // Teeme uue taski HTML elementi mille saaks lehe peale listi lisada
-        taskList.appendChild(taskRow); // Lisame taski lehele
+        sendTask("New Task", "");
     });
 });
 
@@ -140,23 +120,46 @@ function createTaskRow(task) {
     let taskRow = document.querySelector('[data-template="task-row"]').cloneNode(true);
     taskRow.removeAttribute('data-template');
 
-    // Täidame vormi väljad andmetega
+    // Заполняем данные задачи
     const name = taskRow.querySelector("[name='name']");
-    name.innerText = task.name;
+    name.value = task.title;
 
     const checkbox = taskRow.querySelector("[name='completed']");
     checkbox.checked = task.completed;
 
+    // Кнопка для удаления задачи
     const deleteButton = taskRow.querySelector('.delete-task');
     deleteButton.addEventListener('click', () => {
-        taskList.removeChild(taskRow);
-        tasks.splice(tasks.indexOf(task), 1);
+        deleteTask(task.id)  // Вызываем функцию для удаления задачи с сервера
+            .then(() => {
+                taskList.removeChild(taskRow);  // Удаляем задачу из DOM
+                tasks.splice(tasks.indexOf(task), 1);  // Удаляем задачу из массива
+            })
+            .catch((error) => {
+                console.error('Error deleting task:', error);
+            });
     });
 
-    // Valmistame checkboxi ette vajutamiseks
-    hydrateAntCheckboxes(taskRow);
-
     return taskRow;
+}
+
+function deleteTask(taskId) {
+    return fetch('https://demo2.z-bit.ee/tasks/' + taskId, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Error deleting task');
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Task deleted:', data);
+    });
 }
 
 
