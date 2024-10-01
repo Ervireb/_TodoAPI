@@ -15,30 +15,39 @@ let tasks =[];
 //=================================================================================
 
 function fetchTasks() {                     // ===== фетч со считыванием задач ===== ===== ===== ===== ===== ===== 
-        fetch('https://demo2.z-bit.ee/tasks', {
-          method: 'GET',
-          headers: {
+    fetch('https://demo2.z-bit.ee/tasks', {
+        method: 'GET',
+        headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + localStorage.getItem('access_token')
-          }
-        })
-        .then(response => response.json())
-        .then(data => {
-          console.log('fetchTasks- Tasks:', data);
-          // let tasksRec = JSON.parse(data);    // Парсим строку JSON в объект JS
-          // console.log(tasksRec);
-          // RecordTasks(tasksRec);
-          RecordTasks(data);
-        })
-        .catch((error) => {
-          console.error('error:', error);
-        }); 
-      }
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json(); // Разбираем JSON здесь
+    })
+    .then(data => {
+        console.log('fetchTasks- Tasks:', data);
+        // let tasksRec = JSON.parse(data);  // Парсим строку JSON в объект JS
+        // console.log(tasksRec);
+        RecordTasks(data); // Передаем объект data напрямую
+    })
+    .catch((error) => {
+        console.error('error:', error);
+    }); 
+}
 
 //=================================================================================
 
 
 function RecordTasks(tasksRec) {
+    tasks = tasksRec;  // Обновляем глобальный массив задач
+    console.log("Tasks:", tasks);
+    tasks.forEach(renderTask);
+
+
     let allIds = tasksRec.map(task => task.id);
     console.log('RecordT',allIds); // [1, 2, 3]
 
@@ -54,7 +63,7 @@ function RecordTasks(tasksRec) {
     // task2.desc = 'New description';
     // console.log(task2);
     // }
-    tasks = tasksRec;
+
     console.log("Dolzno Byt' tasks:", tasksRec);
 
 }     
@@ -86,19 +95,23 @@ function sendTask(title, desc) {
 
   fetch('https://demo2.z-bit.ee/tasks', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json','Authorization': 'Bearer ' + localStorage.getItem('access_token')},
+    headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+    },
     body: JSON.stringify(data)
   })
   .then(response => response.json())
-  .then(data => {
-    console.log('sendTask- Task added:', data);
-    // let tasksRec = JSON.parse(data);    // Парсим строку JSON в объект JS
-    // console.log(tasksRec);
-    // RecordTasks(tasksRec);
-    RecordTasks2([data]);
-  })
-  .catch((error) => {
-    console.error('Error adding task:', error);
+    .then(data => {
+        console.log('sendTask- Task added:', data);
+        // let tasksRec = JSON.parse(data);    // Парсим строку JSON в объект JS
+        // console.log(tasksRec);
+        // RecordTasks(tasksRec);
+        tasks.push(data);  // Добавляем новую задачу в массив tasks
+        renderTask(data);  // Отображаем новую задачу на странице
+    })
+    .catch((error) => {
+        console.error('Error adding task:', error);
   }); 
 }
 
@@ -106,17 +119,20 @@ function sendTask(title, desc) {
 window.addEventListener('load', () => {
     taskList = document.querySelector('#task-list');
     addTask = document.querySelector('#add-task');
-    fetchTasks()
 
-    tasks.forEach(renderTask);
-
-    // kui nuppu vajutatakse siis lisatakse uus task
-    addTask.addEventListener('click', () => {
-        sendTask("Task "+ taskCount, "");
-        const task = createTask(); // Teeme kõigepealt lokaalsesse "andmebaasi" uue taski
-        const taskRow = createTaskRow(task); // Teeme uue taski HTML elementi mille saaks lehe peale listi lisada
-        taskList.appendChild(taskRow); // Lisame taski lehele
+    const accessToken = localStorage.getItem('access_token');   // Проверка наличия токена в localStorage
+    if (accessToken) {
+        toggleLogin();  // Меняем кнопку на "Log Out"
+        document.getElementById("signUpButton").classList.add("hidden"); // Скрываем кнопку Sign Up
+    }
+    
+    fetchTasks();       // Загружаем задачи при старте страницы
+    
+    addTask.addEventListener('click', () => {                   // Обработчик для добавления новой задачи
+        sendTask("New Task", ""); 
     });
+  //was sendTask("Task " + (tasks.length + 1), ""); Перемудрил? Возможно.
+
 });
 
 function renderTask(task) {
@@ -140,25 +156,119 @@ function createTaskRow(task) {
     let taskRow = document.querySelector('[data-template="task-row"]').cloneNode(true);
     taskRow.removeAttribute('data-template');
 
-    // Täidame vormi väljad andmetega
+    // Заполняем данные задач
     const name = taskRow.querySelector("[name='name']");
-    name.innerText = task.name;
+    name.value = task.title;
 
     const checkbox = taskRow.querySelector("[name='completed']");
-    checkbox.checked = task.completed;
+    checkbox.checked = task.marked_as_done; // Устанавливаем начальное состояние чекбокса
 
-    const deleteButton = taskRow.querySelector('.delete-task');
-    deleteButton.addEventListener('click', () => {
-        taskList.removeChild(taskRow);
-        tasks.splice(tasks.indexOf(task), 1);
+    // Обработчик события для чекбокса
+    checkbox.addEventListener('change', () => {
+        const markedAsDone = checkbox.checked;
+        updateTaskStatus(task.id, markedAsDone);
     });
 
-    // Valmistame checkboxi ette vajutamiseks
-    hydrateAntCheckboxes(taskRow);
+    // Обработчик события для редактирования названия задачи
+    name.addEventListener('blur', () => {
+        const newTitle = name.value;
+        updateTaskTitle(task.id, newTitle);
+    });
+
+    // Обработчик события для удаления задачи
+    const deleteButton = taskRow.querySelector('.delete-task');
+    deleteButton.addEventListener('click', () => {
+        deleteTask(task.id, taskRow); // Вызываем функцию удаления задачи
+    });
 
     return taskRow;
 }
 
+
+function updateTaskStatus(taskId, markedAsDone) {
+    const data = {
+        title: tasks.find(task => task.id === taskId).title, // Получаем название задачи по ID
+        marked_as_done: markedAsDone
+    };
+
+    fetch(`https://demo2.z-bit.ee/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(updatedTask => {
+        console.log('Task updated successfully:', updatedTask);
+        // Здесь можно обновить локальный массив задач, если необходимо
+    })
+    .catch(error => {
+        console.error('Error updating task:', error);
+    });
+}
+
+
+function updateTaskTitle(taskId, newTitle) {
+    const data = {
+        title: newTitle,
+        marked_as_done: tasks.find(task => task.id === taskId).marked_as_done // Сохраняем текущее состояние завершенности
+    };
+
+    fetch(`https://demo2.z-bit.ee/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(updatedTask => {
+        console.log('Task updated successfully:', updatedTask);
+        // Здесь можно обновить локальный массив задач, если необходимо
+        const index = tasks.findIndex(task => task.id === taskId);
+        if (index !== -1) {
+            tasks[index].title = updatedTask.title; // Обновляем название задачи в локальном массиве
+        }
+    })
+    .catch(error => {
+        console.error('Error updating task title:', error);
+    });
+}
+
+
+function deleteTask(taskId, taskRow) {
+    fetch(`https://demo2.z-bit.ee/tasks/${taskId}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        // Удаляем строку задачи из интерфейса
+        taskList.removeChild(taskRow);
+        tasks.splice(tasks.indexOf(tasks.find(task => task.id === taskId)), 1); // Удаляем задачу из массива
+        console.log('Task deleted successfully');
+    })
+    .catch(error => {
+        console.error('Error deleting task:', error);
+    });
+}
 
 function createAntCheckbox() {
     const checkbox = document.querySelector('[data-template="ant-checkbox"]').cloneNode(true);
@@ -190,10 +300,6 @@ function hydrateAntCheckboxes(element) {
             checkbox.classList.add('ant-checkbox-checked');
         }
         
-        // Kui inputi peale vajutatakse siis uuendatakse checkboxi kujundust
-        input.addEventListener('change', () => {
-            checkbox.classList.toggle('ant-checkbox-checked');
-        });
     }
 }
 
@@ -268,12 +374,18 @@ function sendLogin() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(data)
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
     .then(data => {
         console.log('sendLogin- Ok:', data);
-        localStorage.setItem('access_token', data.access_token);    // Сохранение access_token в браузере
+        localStorage.setItem('access_token', data.access_token); // Сохранение access_token в браузере
         toggleLogin();
         document.getElementById("signUpButton").classList.add("hidden");
+        if (overlay) overlay.remove();
     })
     .catch((error) => {
         console.error('Ko:', error);
@@ -316,6 +428,7 @@ function sendSingin() {   // was closePopup
         localStorage.setItem('access_token', data.access_token);    // Сохранение access_token в браузере
         toggleLogin();
         document.getElementById("signUpButton").classList.add("hidden");
+        if (overlay) overlay.remove();
     })
     .catch((error) => {
         console.error('Ko:', error);

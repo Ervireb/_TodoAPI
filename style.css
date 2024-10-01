@@ -28,7 +28,9 @@ div>ul>li#invis:hover {
 }
 /* ul li:nth-child(2) {margin-right: 20px;} */
 
-
+input[type="checkbox"] {
+  opacity: 1; /* они были прозрачные */
+}
 
 #overlay-xxy {
   position: fixed;
